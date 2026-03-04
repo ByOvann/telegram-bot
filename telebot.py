@@ -1,7 +1,8 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = "8783768315:AAFix5FfKO27peoZpQQk914_j_AAK3u0gts"
+import os
+TOKEN = os.environ.get("TOKEN")
 LINK_PRODUK = "https://lynk.id/novansetiadi03"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -26,4 +27,5 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
 
 print("Bot aktif...")
+
 app.run_polling()
