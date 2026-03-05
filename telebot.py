@@ -17,7 +17,10 @@ client = gspread.authorize(creds)
 
 SHEET_ID = "1q4w8NAg0M3aLZDTFV5znla3pwKVKJlAAwPwlA7mweDI"
 ADMIN_ID = 8253266018
+
+# States
 ASK_EMAIL = 1
+ASK_NAMA, ASK_PRODUK, ASK_KELUHAN, ASK_HP = 2, 3, 4, 5
 
 # ── Google Sheet helpers ──────────────────────────────
 def get_products():
@@ -46,46 +49,62 @@ def get_all_emails():
     sheet = client.open_by_key(SHEET_ID).worksheet("emails")
     return sheet.get_all_records()
 
+def save_bantuan(nama, produk, keluhan, nomor_hp):
+    sheet = client.open_by_key(SHEET_ID).worksheet("bantuan")
+    sheet.append_row([
+        nama, produk, keluhan, nomor_hp,
+        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Pending"
+    ])
+
 # ── Brevo email sender ────────────────────────────────
 def kirim_email(to_email, to_nama, subject, isi_html):
     configuration = sib_api_v3_sdk.Configuration()
     configuration.api_key['api-key'] = BREVO_API_KEY
     api = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
-    
     email = sib_api_v3_sdk.SendSmtpEmail(
         to=[{"email": to_email, "name": to_nama}],
-        sender={"email": "emailkamu@gmail.com", "name": "Toko Digital Kamu"},
+        sender={"email": "emailkamu@gmail.com", "name": "TulisanKita"},
         subject=subject,
         html_content=isi_html
     )
     api.send_transac_email(email)
 
-# ── Telegram handlers ─────────────────────────────────
+# ── /start ────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_user(update.effective_user.id)
     products = get_products()
-    
+
     keyboard = []
     for p in products:
         keyboard.append([InlineKeyboardButton(
             f"{p['nama_produk']} - Rp{int(p['harga']):,}",
-            callback_data=p['nama_produk']
+            callback_data=f"produk_{p['nama_produk']}"
         )])
-    
+    keyboard.append([InlineKeyboardButton("🆘 Bantuan", callback_data="bantuan")])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "Halo! 👋 Selamat datang!\nBerikut produk kami:",
+        "Halo! 👋 Selamat datang di TulisanKita!\nBerikut produk kami:",
         reply_markup=reply_markup
     )
     return ConversationHandler.END
 
+# ── Produk button ─────────────────────────────────────
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
+
+    if query.data == "bantuan":
+        await query.message.reply_text(
+            "Halo! 😊 Kami siap membantu.\n\nSilakan ketik *nama lengkap* kamu:",
+            parse_mode='Markdown'
+        )
+        return ASK_NAMA
+
     products = get_products()
     for p in products:
-        if p['nama_produk'] == query.data:
+        if query.data == f"produk_{p['nama_produk']}":
             await query.message.reply_text(
                 f"📦 *{p['nama_produk']}*\n"
                 f"💰 Harga: Rp{int(p['harga']):,}\n"
@@ -100,18 +119,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return ASK_EMAIL
 
+# ── Email conversation ────────────────────────────────
 async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = update.message.text.strip()
     nama = update.effective_user.first_name
-    
+
     if "@" not in email or "." not in email:
         await update.message.reply_text("Format email tidak valid, coba lagi atau ketik /skip")
         return ASK_EMAIL
-    
+
     baru = save_email(email, nama)
-    
     if baru:
-        # Kirim welcome email
         kirim_email(
             email, nama,
             "Selamat datang! 🎉",
@@ -119,43 +137,87 @@ async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             <h2>Halo {nama}! 👋</h2>
             <p>Terima kasih sudah bergabung!</p>
             <p>Kamu akan mendapat info produk & promo terbaru dari kami.</p>
-            <p>Cek produk kami di sini: <a href="https://lynk.id/novansetiadi03">Klik di sini</a></p>
-            <br>
-            <p>Salam,<br>Tim Toko Digital</p>
+            <p>Cek produk kami: <a href="https://lynk.id/novansetiadi03">Klik di sini</a></p>
+            <br><p>Salam,<br>Tim TulisanKita</p>
             """
         )
-        await update.message.reply_text(
-            "Terima kasih! 🎉 Email kamu sudah terdaftar.\n"
-            "Cek inbox kamu ya, ada pesan dari kami! 📧"
-        )
+        await update.message.reply_text("Terima kasih! 🎉 Cek inbox kamu ya! 📧")
     else:
         await update.message.reply_text("Email kamu sudah terdaftar sebelumnya! 😊")
-    
+
     return ConversationHandler.END
 
 async def skip_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Oke, tidak apa-apa! 😊")
     return ConversationHandler.END
 
+# ── Bantuan conversation ──────────────────────────────
+async def ask_nama(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['nama'] = update.message.text.strip()
+    await update.message.reply_text("Produk apa yang kamu beli? 📦")
+    return ASK_PRODUK
+
+async def ask_produk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['produk'] = update.message.text.strip()
+    await update.message.reply_text("Apa pertanyaan atau keluhanmu? 💬")
+    return ASK_KELUHAN
+
+async def ask_keluhan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['keluhan'] = update.message.text.strip()
+    await update.message.reply_text("Nomor HP kamu berapa? 📱")
+    return ASK_HP
+
+async def ask_hp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['nomor_hp'] = update.message.text.strip()
+
+    nama = context.user_data['nama']
+    produk = context.user_data['produk']
+    keluhan = context.user_data['keluhan']
+    nomor_hp = context.user_data['nomor_hp']
+
+    save_bantuan(nama, produk, keluhan, nomor_hp)
+
+    # Notif ke Telegram kamu
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=f"🆘 *Permintaan Bantuan Baru!*\n\n"
+             f"👤 Nama: {nama}\n"
+             f"📦 Produk: {produk}\n"
+             f"💬 Keluhan: {keluhan}\n"
+             f"📱 HP: {nomor_hp}\n"
+             f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        parse_mode='Markdown'
+    )
+
+    await update.message.reply_text(
+        "Terima kasih! 🙏\n\n"
+        "Permintaan bantuan kamu sudah kami terima.\n"
+        "Tim kami akan segera menghubungi kamu! 😊"
+    )
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Dibatalkan. Ketik /start untuk mulai lagi.")
+    return ConversationHandler.END
+
+# ── Auto reply ────────────────────────────────────────
 async def auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_user(update.effective_user.id)
     pesan = update.message.text.lower()
-    
     if any(k in pesan for k in ["harga", "produk", "katalog", "beli", "order"]):
         await start(update, context)
     else:
-        await update.message.reply_text("Halo! 😊 Ketik /start untuk lihat katalog produk kami!")
+        await update.message.reply_text("Halo! 😊 Ketik /start untuk lihat katalog & bantuan!")
 
+# ── Broadcast & Email blast ───────────────────────────
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Kamu bukan admin!")
         return
-    
     pesan = " ".join(context.args)
     if not pesan:
-        await update.message.reply_text("Format: /broadcast pesan kamu disini")
+        await update.message.reply_text("Format: /broadcast pesan kamu")
         return
-    
     users = get_all_users()
     berhasil = 0
     for user_id in users:
@@ -164,50 +226,55 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             berhasil += 1
         except:
             pass
-    
     await update.message.reply_text(f"Broadcast terkirim ke {berhasil} user! ✅")
 
 async def email_blast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Kamu bukan admin!")
         return
-    
-    if len(context.args) < 2:
-        await update.message.reply_text("Format: /emailblast Judul | Isi pesan kamu")
-        return
-    
     teks = " ".join(context.args)
     parts = teks.split("|")
+    if len(parts) < 2:
+        await update.message.reply_text("Format: /emailblast Judul | Isi pesan")
+        return
     subject = parts[0].strip()
-    isi = parts[1].strip() if len(parts) > 1 else teks
-    
+    isi = parts[1].strip()
     emails = get_all_emails()
     berhasil = 0
     for e in emails:
         try:
             kirim_email(
-                e['email'], e['nama'],
-                subject,
+                e['email'], e['nama'], subject,
                 f"<p>{isi}</p><br><a href='https://lynk.id/novansetiadi03'>Cek produk kami</a>"
             )
             berhasil += 1
         except:
             pass
-    
     await update.message.reply_text(f"Email blast terkirim ke {berhasil} subscriber! ✅")
 
 # ── App setup ─────────────────────────────────────────
 conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(button_handler)],
-    states={ASK_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_email)]},
-    fallbacks=[CommandHandler("skip", skip_email)]
+    entry_points=[
+        CommandHandler("start", start),
+        CallbackQueryHandler(button_handler)
+    ],
+    states={
+        ASK_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_email)],
+        ASK_NAMA: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_nama)],
+        ASK_PRODUK: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_produk)],
+        ASK_KELUHAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_keluhan)],
+        ASK_HP: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_hp)],
+    },
+    fallbacks=[
+        CommandHandler("skip", skip_email),
+        CommandHandler("cancel", cancel)
+    ]
 )
 
 app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
+app.add_handler(conv_handler)
 app.add_handler(CommandHandler("broadcast", broadcast))
 app.add_handler(CommandHandler("emailblast", email_blast))
-app.add_handler(conv_handler)
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
 
 print("Bot aktif...")
