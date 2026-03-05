@@ -5,25 +5,33 @@ from google.oauth2.service_account import Credentials
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# Setup credentials
 TOKEN = os.environ.get("TOKEN")
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 creds_json = os.environ.get("GOOGLE_CREDENTIALS")
 creds_dict = json.loads(creds_json)
 creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
 client = gspread.authorize(creds)
 
-SHEET_ID = "1q4w8NAg0M3aLZDTFV5znla3pwKVKJlAAwPwlA7mweDI"  # ganti ini!
-ADMIN_ID = 8253266018  # ganti dengan ID Telegram kamu!
-
-users = set()
+SHEET_ID = "1q4w8NAg0M3aLZDTFV5znla3pwKVKJlAAwPwlA7mweDI"
+ADMIN_ID = 8253266018
 
 def get_products():
     sheet = client.open_by_key(SHEET_ID).sheet1
     return sheet.get_all_records()
 
+def save_user(user_id):
+    sheet = client.open_by_key(SHEET_ID).worksheet("users")
+    existing = sheet.col_values(1)
+    if str(user_id) not in existing:
+        sheet.append_row([str(user_id)])
+
+def get_all_users():
+    sheet = client.open_by_key(SHEET_ID).worksheet("users")
+    users = sheet.col_values(1)
+    return [u for u in users if u != "user_id" and u != ""]
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    users.add(update.effective_user.id)
+    save_user(update.effective_user.id)
     products = get_products()
     
     keyboard = []
@@ -56,7 +64,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
 async def auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    users.add(update.effective_user.id)
+    save_user(update.effective_user.id)
     pesan = update.message.text.lower()
     
     if any(k in pesan for k in ["harga", "produk", "katalog", "beli", "order"]):
@@ -74,10 +82,11 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Format: /broadcast pesan kamu disini")
         return
     
+    users = get_all_users()
     berhasil = 0
     for user_id in users:
         try:
-            await context.bot.send_message(chat_id=user_id, text=pesan)
+            await context.bot.send_message(chat_id=int(user_id), text=pesan)
             berhasil += 1
         except:
             pass
