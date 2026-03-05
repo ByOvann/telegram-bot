@@ -9,6 +9,10 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 
 TOKEN = os.environ.get("TOKEN")
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
+TWILIO_SID = os.environ.get("TWILIO_SID")
+TWILIO_TOKEN = os.environ.get("TWILIO_TOKEN")
+TWILIO_WA = os.environ.get("TWILIO_WA")
+TWILIO_TO = os.environ.get("TWILIO_TO")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 creds_json = os.environ.get("GOOGLE_CREDENTIALS")
 creds_dict = json.loads(creds_json)
@@ -36,7 +40,14 @@ def get_all_users():
     sheet = client.open_by_key(SHEET_ID).worksheet("users")
     users = sheet.col_values(1)
     return [u for u in users if u != "user_id" and u != ""]
-
+def kirim_wa(pesan):
+    from twilio.rest import Client
+    client_twilio = Client(TWILIO_SID, TWILIO_TOKEN)
+    client_twilio.messages.create(
+        from_=TWILIO_WA,
+        body=pesan,
+        to=TWILIO_TO
+    )
 def save_email(email, nama):
     sheet = client.open_by_key(SHEET_ID).worksheet("emails")
     existing = sheet.col_values(1)
@@ -188,6 +199,15 @@ async def ask_hp(update: Update, context: ContextTypes.DEFAULT_TYPE):
              f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         parse_mode='Markdown'
     )
+    # Notif ke WhatsApp kamu
+    kirim_wa(
+        f"🆘 Permintaan Bantuan Baru!\n\n"
+        f"👤 Nama: {nama}\n"
+        f"📦 Produk: {produk}\n"
+        f"💬 Keluhan: {keluhan}\n"
+        f"📱 HP: {nomor_hp}\n"
+        f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
 
     await update.message.reply_text(
         "Terima kasih! 🙏\n\n"
@@ -279,3 +299,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
 
 print("Bot aktif...")
 app.run_polling()
+
