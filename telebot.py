@@ -1,6 +1,10 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import json
 
+creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+creds_dict = json.loads(creds_json)
+creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
 import os
 TOKEN = os.environ.get("TOKEN")
 LINK_PRODUK = "https://lynk.id/novansetiadi03"
@@ -29,3 +33,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
 print("Bot aktif...")
 
 app.run_polling()
+
