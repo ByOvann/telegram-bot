@@ -75,7 +75,7 @@ def kirim_email(to_email, to_nama, subject, isi_html):
     api = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
     email = sib_api_v3_sdk.SendSmtpEmail(
         to=[{"email": to_email, "name": to_nama}],
-        sender={"email": "emailkamu@gmail.com", "name": "TulisanKita"},
+        sender={"email": "hiuraksasa1927@gmail.com", "name": "TulisanKita"},
         subject=subject,
         html_content=isi_html
     )
@@ -299,4 +299,5 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
 
 print("Bot aktif...")
 app.run_polling()
+
 
